@@ -1,0 +1,42 @@
+name: file_convertor
+description: "A new Flutter project."
+publish_to: "none"
+version: 0.1.0
+
+environment:
+  sdk: ^3.9.2
+
+dependencies:
+  file_picker: ^10.3.7
+  flutter:
+    sdk: flutter
+  flutter_riverpod: ^3.0.3
+  local_auth: ^2.2.0
+  shared_preferences: ^2.5.4
+  shimmer: ^3.0.0
+  # Discovery
+  udp: ^5.0.3
+  multicast_dns: ^0.3.2
+  # Networking
+  network_info_plus: ^5.0.0
+  path_provider: ^2.1.2
+  # QR
+  qr_flutter: ^4.1.0
+  # Encryption
+  encrypt: ^5.0.3
+  crypto: ^3.0.3
+  permission_handler: ^11.3.0
+  connectivity_plus: ^6.0.3
+  flutter_staggered_grid_view: ^0.7.0
+  http: ^1.6.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/images/
