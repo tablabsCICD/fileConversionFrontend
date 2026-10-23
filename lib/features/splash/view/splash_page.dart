@@ -1,9 +1,11 @@
 import 'dart:async';
 import 'package:file_convertor/app/app.dart';
-import 'package:file_convertor/app/theme/app_theme.dart';
+import 'package:file_convertor/app/theme/app_palette.dart';
+import 'package:file_convertor/app/theme/app_tokens.dart';
+import 'package:file_convertor/app/theme/app_typography.dart';
+import 'package:file_convertor/core/widgets/brand_mark.dart';
 import 'package:file_convertor/core/services/permissions_service.dart';
 import 'package:flutter/material.dart';
-import 'package:permission_handler/permission_handler.dart';
 
 class SplashPage extends StatefulWidget {
   const SplashPage({super.key});
@@ -49,12 +51,14 @@ class _SplashPageState extends State<SplashPage>
   }
 
   void _goNext() async {
-    final storageOk = await PermissionsService.ensureStoragePermission();
-
-    if (!storageOk) {
-      _showPermissionDialog();
-      return;
+    // Ask for media access up front, but never block the app on it: the
+    // Storage view explains what is missing and can ask again.
+    try {
+      await PermissionsService.ensureStoragePermission();
+    } catch (_) {
+      // Permission APIs are unavailable on some platforms (web, desktop).
     }
+    if (!mounted) return;
 
     Navigator.pushReplacement(
       context,
@@ -68,25 +72,6 @@ class _SplashPageState extends State<SplashPage>
     );
   }
 
-  void _showPermissionDialog() {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => AlertDialog(
-        title: const Text("Storage Permission Required"),
-        content: const Text(
-          "Storage permission is required to share and receive files.",
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => openAppSettings(),
-            child: const Text("Open Settings"),
-          ),
-        ],
-      ),
-    );
-  }
-
   @override
   void dispose() {
     _controller.dispose();
@@ -96,6 +81,7 @@ class _SplashPageState extends State<SplashPage>
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final p = context.palette;
 
     return Scaffold(
       backgroundColor: theme.scaffoldBackgroundColor,
@@ -114,19 +100,23 @@ class _SplashPageState extends State<SplashPage>
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       _logo(theme),
-                      const SizedBox(height: 24),
-                      Text(
-                        "File Convertor",
-                        style: theme.textTheme.headlineSmall?.copyWith(
-                          fontWeight: FontWeight.bold,
+                      const SizedBox(height: AppSpace.lg + 4),
+                      Text.rich(
+                        const TextSpan(
+                          children: [
+                            TextSpan(text: 'File '),
+                            TextSpan(
+                              text: 'Convertor',
+                              style: TextStyle(fontStyle: FontStyle.italic),
+                            ),
+                          ],
                         ),
+                        style: theme.textTheme.displaySmall,
                       ),
-                      const SizedBox(height: 8),
+                      const SizedBox(height: AppSpace.sm),
                       Text(
-                        "Convert • Share • Secure",
-                        style: theme.textTheme.bodyMedium?.copyWith(
-                          color: theme.hintColor,
-                        ),
+                        "CONVERT · SHARE · SECURE",
+                        style: AppType.eyebrow.copyWith(color: p.inkMuted),
                       ),
                     ],
                   ),
@@ -140,72 +130,64 @@ class _SplashPageState extends State<SplashPage>
   }
 
   // ------------------------------------------------------------
-  // LOGO (FILE SHARING ANIMATION FEEL)
+  // LOGO
   // ------------------------------------------------------------
   Widget _logo(ThemeData theme) {
-    return Container(
-      height: 110,
-      width: 110,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: theme.primaryColor.withOpacity(0.12),
-      ),
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          Icon(Icons.folder_open, size: 48, color: theme.primaryColor),
-          Positioned(
-            right: 18,
-            top: 22,
-            child: Icon(Icons.send, size: 20, color: theme.primaryColor),
-          ),
-        ],
-      ),
-    );
+    return const BrandMark(size: 88, showWordmark: false);
   }
 
   // ------------------------------------------------------------
-  // BACKGROUND DECOR (FORMAL)
+  // BACKGROUND DECOR — a quiet grid of hairlines, like a cutting mat.
   // ------------------------------------------------------------
   Widget _backgroundDecor(ThemeData theme) {
-    final size = MediaQuery.of(context).size;
-
+    final p = context.palette;
     return Positioned.fill(
       child: IgnorePointer(
-        child: Stack(
-          children: [
-            Positioned(
-              top: -size.height * 0.2,
-              left: -size.width * 0.3,
-              child: Container(
-                width: size.width * 1.3,
-                height: size.width * 1.3,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: RadialGradient(
-                    colors: [
-                      AppTheme.primary.withOpacity(0.15),
-                      Colors.transparent,
-                    ],
-                  ),
-                ),
-              ),
-            ),
-            Positioned(
-              bottom: -120,
-              right: -80,
-              child: Container(
-                width: 240,
-                height: 240,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: AppTheme.primary.withOpacity(0.05),
-                ),
-              ),
-            ),
-          ],
+        child: CustomPaint(
+          painter: _GridPainter(color: p.line, accent: p.accent),
         ),
       ),
     );
   }
+}
+
+class _GridPainter extends CustomPainter {
+  _GridPainter({required this.color, required this.accent});
+
+  final Color color;
+  final Color accent;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    const step = 40.0;
+    final line = Paint()
+      ..color = color
+      ..strokeWidth = 1;
+    for (var x = (size.width % step) / 2; x < size.width; x += step) {
+      canvas.drawLine(Offset(x, 0), Offset(x, size.height), line);
+    }
+    for (var y = (size.height % step) / 2; y < size.height; y += step) {
+      canvas.drawLine(Offset(0, y), Offset(size.width, y), line);
+    }
+    // Soft accent bloom behind the mark.
+    final c = size.center(Offset.zero);
+    canvas.drawCircle(
+      c,
+      size.shortestSide * 0.6,
+      Paint()
+        ..shader =
+            RadialGradient(
+              colors: [
+                accent.withValues(alpha: 0.10),
+                accent.withValues(alpha: 0),
+              ],
+            ).createShader(
+              Rect.fromCircle(center: c, radius: size.shortestSide * 0.6),
+            ),
+    );
+  }
+
+  @override
+  bool shouldRepaint(_GridPainter old) =>
+      old.color != color || old.accent != accent;
 }

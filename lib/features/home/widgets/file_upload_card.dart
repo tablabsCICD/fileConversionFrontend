@@ -1,274 +1,202 @@
-import 'package:file_convertor/core/widgets/ResponsiveWidget.dart';
-import 'package:file_convertor/features/home/widgets/dashed_rounded_rect_painter.dart';
+import 'package:file_convertor/app/theme/app_palette.dart';
+import 'package:file_convertor/app/theme/app_tokens.dart';
+import 'package:file_convertor/app/theme/app_typography.dart';
+import 'package:file_convertor/core/utils/file_format.dart';
+import 'package:file_convertor/core/widgets/app_button.dart';
+import 'package:file_convertor/core/widgets/drop_zone.dart';
+import 'package:file_convertor/core/widgets/file_tile.dart';
+import 'package:file_convertor/core/widgets/inline_notice.dart';
+import 'package:file_convertor/features/file_conversion/data/helper/conversion_helper.dart';
+import 'package:file_convertor/features/file_conversion/data/models/conversion_section.dart';
+import 'package:file_convertor/features/file_conversion/data/models/conversion_state.dart';
+import 'package:file_convertor/features/file_conversion/data/repositories/conversion_sections_list.dart';
+import 'package:file_convertor/features/file_conversion/data/services/file_converter.dart';
+import 'package:file_convertor/features/file_conversion/view/file_upload_page.dart';
+import 'package:file_convertor/features/file_conversion/widgets/conversion_section_card.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-class FileUploadCard extends StatefulWidget {
+/// Quick convert: pick any file, see which on-device tools accept it, and
+/// jump straight into the converter with the file already loaded.
+class FileUploadCard extends ConsumerStatefulWidget {
   final bool isShort;
 
   const FileUploadCard({super.key, this.isShort = false});
 
+  /// On-device tools that accept a file named [fileName].
+  static List<ConversionItem> toolsFor(
+    String fileName,
+    bool Function(String title) supports,
+  ) {
+    final specific = <ConversionItem>[];
+    final generic = <ConversionItem>[];
+    for (final section in conversionSections) {
+      for (final item in section.items) {
+        if (!supports(item.title)) continue;
+        final exts = ConversionHelper.allowedExtensionsFromTitle(item.title);
+        if (exts.isEmpty) {
+          generic.add(item);
+        } else if (ConversionHelper.isAccepted(fileName, exts)) {
+          if (!specific.any((i) => i.title == item.title)) specific.add(item);
+        }
+      }
+    }
+    return [...specific, ...generic];
+  }
+
   @override
-  State<FileUploadCard> createState() => _FileUploadCardState();
+  ConsumerState<FileUploadCard> createState() => _FileUploadCardState();
 }
 
-class _FileUploadCardState extends State<FileUploadCard> {
-  PlatformFile? _selectedFile;
-  bool _isUploading = false;
-  double _progress = 0;
+class _FileUploadCardState extends ConsumerState<FileUploadCard> {
+  /// Set when the picked file has no on-device conversion.
+  SelectedFile? _unsupported;
 
-  bool get hasFile => _selectedFile != null;
-
-  /// ---------------- PICK FILE ----------------
   Future<void> _pickFile() async {
-    if (_isUploading) return;
-
-    final result = await FilePicker.platform.pickFiles(
-      allowMultiple: false,
-      type: FileType.any,
+    final result = await FilePicker.platform.pickFiles(withData: kIsWeb);
+    if (result == null || result.files.isEmpty || !mounted) return;
+    final f = result.files.first;
+    final file = SelectedFile(
+      name: f.name,
+      sizeBytes: f.size,
+      path: kIsWeb ? null : f.path,
+      bytes: kIsWeb ? f.bytes : null,
     );
 
-    if (result != null && result.files.isNotEmpty) {
-      setState(() => _selectedFile = result.files.first);
+    final converter = ref.read(fileConverterProvider);
+    final tools = FileUploadCard.toolsFor(file.name, converter.supports)
+        // "Compress Files" works for anything; it is not a conversion.
+        .where((t) => t.title != 'Compress Files')
+        .toList();
+    if (tools.isEmpty) {
+      setState(() => _unsupported = file);
+      return;
     }
-  }
-
-  /// ---------------- UPLOAD FILE ----------------
-  Future<void> _uploadFile() async {
-    if (!hasFile || _isUploading) return;
-
-    setState(() {
-      _isUploading = true;
-      _progress = 0;
-    });
-
-    /// 🔄 Simulated upload (replace with API progress)
-    for (int i = 1; i <= 100; i++) {
-      await Future.delayed(const Duration(milliseconds: 30));
-      setState(() => _progress = i / 100);
-    }
-
-    setState(() => _isUploading = false);
-
-    debugPrint("Upload completed: ${_selectedFile!.name}");
-  }
-
-  /// ---------------- COMMON ACTION ----------------
-  void _handleAction() {
-    hasFile ? _uploadFile() : _pickFile();
-  }
-
-  /// ---------------- COMMON BUTTON ----------------
-  Widget _actionButton(ThemeData theme, {bool compact = false}) {
-    return ElevatedButton(
-      onPressed: _isUploading ? null : _handleAction,
-      style: ElevatedButton.styleFrom(
-        backgroundColor: theme.primaryColor,
-        foregroundColor: Colors.white,
-        padding: EdgeInsets.symmetric(
-          horizontal: compact ? 18 : 28,
-          vertical: compact ? 10 : 14,
-        ),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-        elevation: 0,
+    setState(() => _unsupported = null);
+    final tool = tools.length == 1
+        ? tools.first
+        : await _chooseTool(file, tools);
+    if (tool == null || !mounted) return;
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => FileUploadPage(item: tool, initialFiles: [file]),
       ),
-      child: Text(
-        _isUploading
-            ? "Uploading..."
-            : hasFile
-            ? "Upload"
-            : "Select",
-        style: TextStyle(
-          fontSize: compact ? 13 : 16,
-          fontWeight: FontWeight.w600,
+    );
+  }
+
+  Future<ConversionItem?> _chooseTool(
+    SelectedFile file,
+    List<ConversionItem> tools,
+  ) {
+    return showModalBottomSheet<ConversionItem>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      backgroundColor: context.palette.surface,
+      builder: (context) => SafeArea(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.sizeOf(context).height * 0.75,
+          ),
+          child: ListView(
+            shrinkWrap: true,
+            padding: const EdgeInsets.fromLTRB(
+              AppSpace.lg - 4,
+              0,
+              AppSpace.lg - 4,
+              AppSpace.lg,
+            ),
+            children: [
+              Text(
+                'CONVERT TO',
+                style: AppType.eyebrow.copyWith(
+                  color: context.palette.inkMuted,
+                ),
+              ),
+              const SizedBox(height: AppSpace.xs),
+              FileTile(
+                name: file.name,
+                sizeLabel: FileFormat.formatBytes(file.sizeBytes),
+                dense: true,
+              ),
+              const SizedBox(height: AppSpace.sm),
+              for (final tool in tools)
+                ConversionToolRow(
+                  item: tool,
+                  onTap: () => Navigator.pop(context, tool),
+                ),
+            ],
+          ),
         ),
+      ),
+    );
+  }
+
+  Widget? _unsupportedNotice() {
+    final f = _unsupported;
+    if (f == null) return null;
+    final ext = FileFormat.extensionOf(f.name);
+    return InlineNotice(
+      tone: NoticeTone.warning,
+      title: ext == null
+          ? 'No conversions for this file yet'
+          : 'No on-device conversions for .$ext yet',
+      message: 'Try a document, image, data or text file.',
+      action: AppButton(
+        label: 'Choose another file',
+        size: AppButtonSize.small,
+        variant: AppButtonVariant.secondary,
+        onPressed: _pickFile,
       ),
     );
   }
 
   /// ================= SHORT CARD =================
   Widget _shortCard(BuildContext context) {
-    final theme = Theme.of(context);
-
-    return InkWell(
-      borderRadius: BorderRadius.circular(14),
-      onTap: _isUploading ? null : _pickFile,
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: theme.cardColor,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: theme.dividerColor.withOpacity(0.25)),
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        DropZone(
+          compact: true,
+          onTap: _pickFile,
+          title: 'Quick convert',
+          caption: 'Pick any file',
+          actionLabel: 'Select',
         ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            /// Icon
-            Container(
-              width: 48,
-              height: 48,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: theme.primaryColor.withOpacity(0.12),
-              ),
-              child: Icon(
-                _isUploading
-                    ? Icons.cloud_upload_outlined
-                    : hasFile
-                    ? Icons.insert_drive_file_rounded
-                    : Icons.upload_rounded,
-                color: theme.primaryColor,
-                size: 24,
-              ),
-            ),
-
-            const SizedBox(height: 10),
-
-            /// File name / status
-            Text(
-              hasFile ? _selectedFile!.name : "No file selected",
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              textAlign: TextAlign.center,
-              style: theme.textTheme.bodyMedium?.copyWith(
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-
-            const SizedBox(height: 4),
-
-            Text(
-              _isUploading ? "Uploading..." : "Tap to select or upload",
-              style: theme.textTheme.bodySmall,
-              textAlign: TextAlign.center,
-            ),
-
-            /// Progress
-            if (_isUploading) ...[
-              const SizedBox(height: 10),
-              LinearProgressIndicator(
-                value: _progress,
-                minHeight: 4,
-                borderRadius: BorderRadius.circular(4),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                "${(_progress * 100).toInt()}%",
-                style: theme.textTheme.bodySmall,
-              ),
-            ],
-
-            const SizedBox(height: 14),
-
-            /// Action button
-            _actionButton(theme, compact: true),
-          ],
-        ),
-      ),
+        if (_unsupportedNotice() case final notice?) ...[
+          const SizedBox(height: AppSpace.sm),
+          notice,
+        ],
+      ],
     );
   }
 
   /// ================= FULL CARD =================
   Widget _fullCard(BuildContext context) {
-    final theme = Theme.of(context);
-
     return Center(
-      child: Container(
-        width: ResponsiveWidget.isMobile(context) ? double.infinity : 500,
-        padding: const EdgeInsets.all(20),
-        child: AbsorbPointer(
-          absorbing: _isUploading,
-          child: InkWell(
-            borderRadius: BorderRadius.circular(18),
-            onTap: _pickFile,
-            child: CustomPaint(
-              painter: DashedRoundedRectPainter(
-                radius: 18,
-                strokeWidth: 2.4,
-                color: theme.canvasColor.withOpacity(0.5),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 560),
+        child: SizedBox(
+          width: double.infinity,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              DropZone(
+                onTap: _pickFile,
+                title: 'Choose a file to convert',
+                caption: 'Documents · Images · Data · Text · Archives',
+                actionLabel: 'Select file',
               ),
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 24,
-                  vertical: 36,
-                ),
-                decoration: BoxDecoration(
-                  color: theme.cardColor,
-                  borderRadius: BorderRadius.circular(18),
-                ),
-                child: Column(
-                  children: [
-                    /// Icon
-                    Container(
-                      width: 82,
-                      height: 82,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: theme.primaryColor.withOpacity(0.1),
-                      ),
-                      child: Icon(
-                        _isUploading
-                            ? Icons.cloud_upload_outlined
-                            : hasFile
-                            ? Icons.insert_drive_file_rounded
-                            : Icons.upload_rounded,
-                        size: 48,
-                        color: theme.primaryColor,
-                      ),
-                    ),
-
-                    const SizedBox(height: 22),
-
-                    /// Title
-                    Text(
-                      _isUploading
-                          ? "Uploading file..."
-                          : hasFile
-                          ? "Selected file"
-                          : "Drop files here or click to select",
-                      textAlign: TextAlign.center,
-                      style: theme.textTheme.titleLarge?.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-
-                    if (hasFile) ...[
-                      const SizedBox(height: 10),
-                      Text(
-                        _selectedFile!.name,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        textAlign: TextAlign.center,
-                        style: theme.textTheme.bodyMedium,
-                      ),
-                    ],
-
-                    if (_isUploading) ...[
-                      const SizedBox(height: 18),
-                      LinearProgressIndicator(
-                        value: _progress,
-                        minHeight: 6,
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      const SizedBox(height: 8),
-                      Text("${(_progress * 100).toInt()}%"),
-                    ],
-
-                    if (!hasFile && !_isUploading) ...[
-                      const SizedBox(height: 10),
-                      Text(
-                        "Text • Documents • Images • Audio • Video • Archives",
-                        textAlign: TextAlign.center,
-                        style: theme.textTheme.bodySmall,
-                      ),
-                    ],
-
-                    const SizedBox(height: 28),
-                    _actionButton(theme),
-                  ],
-                ),
-              ),
-            ),
+              if (_unsupportedNotice() case final notice?) ...[
+                const SizedBox(height: AppSpace.sm),
+                notice,
+              ],
+            ],
           ),
         ),
       ),

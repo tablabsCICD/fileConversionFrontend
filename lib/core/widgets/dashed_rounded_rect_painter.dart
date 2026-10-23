@@ -20,7 +20,13 @@ class DashedRoundedRectPainter extends CustomPainter {
       ..style = PaintingStyle.stroke
       ..strokeWidth = strokeWidth;
 
-    final rect = Rect.fromLTWH(0, 0, size.width, size.height);
+    // Inset by half the stroke so the line is not clipped at the edges.
+    final rect = Rect.fromLTWH(
+      0,
+      0,
+      size.width,
+      size.height,
+    ).deflate(strokeWidth / 2);
     final rrect = RRect.fromRectAndRadius(rect, Radius.circular(radius));
     final path = Path()..addRRect(rrect);
 
@@ -52,5 +58,8 @@ class DashedRoundedRectPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+  bool shouldRepaint(covariant DashedRoundedRectPainter oldDelegate) =>
+      oldDelegate.color != color ||
+      oldDelegate.strokeWidth != strokeWidth ||
+      oldDelegate.radius != radius;
 }

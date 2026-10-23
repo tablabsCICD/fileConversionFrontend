@@ -1,8 +1,11 @@
 import 'dart:ui';
+import 'package:file_convertor/app/theme/app_palette.dart';
+import 'package:file_convertor/app/theme/app_tokens.dart';
 import 'package:file_convertor/core/widgets/ResponsiveWidget.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+/// Floating, frosted bottom navigation. Must be placed inside a [Stack].
 class CustomNavBar extends ConsumerWidget {
   final int index;
   final Function(int) onIndexChanged;
@@ -13,42 +16,57 @@ class CustomNavBar extends ConsumerWidget {
     required this.onIndexChanged,
   });
 
+  static const items = [
+    (Icons.home_outlined, Icons.home_rounded, 'Home'),
+    (Icons.swap_horiz, Icons.swap_horiz_rounded, 'Convert'),
+    (Icons.wifi_tethering, Icons.wifi_tethering, 'Share'),
+    (Icons.person_outline, Icons.person_rounded, 'Profile'),
+  ];
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final theme = Theme.of(context);
+    final p = context.palette;
+    final width = MediaQuery.sizeOf(context).width;
+    final inset = ResponsiveWidget.isMobile(context)
+        ? AppSpace.md
+        : (width - 520) / 2;
 
     return Positioned(
-      bottom: 16,
-      left: ResponsiveWidget.isMobile(context)
-          ? 20
-          : ResponsiveWidget.isTablet(context)
-          ? 150
-          : 250,
-      right: ResponsiveWidget.isMobile(context)
-          ? 20
-          : ResponsiveWidget.isTablet(context)
-          ? 150
-          : 250,
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(24),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-          child: Container(
-            padding: EdgeInsets.symmetric(vertical: 8, horizontal: 24),
-            decoration: BoxDecoration(
-              color: theme.canvasColor.withOpacity(0.12),
-              borderRadius: BorderRadius.circular(24),
-              border: Border.all(color: theme.canvasColor.withOpacity(0.2)),
-            ),
-
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: [
-                _navItem(Icons.home_outlined, "Home", 0, context),
-                _navItem(Icons.transform, "Convert", 1, context),
-                _navItem(Icons.wifi_tethering, "Share", 2, context),
-                _navItem(Icons.person_2_outlined, "Profile", 3, context),
-              ],
+      bottom: MediaQuery.paddingOf(context).bottom > 0
+          ? AppSpace.xs
+          : AppSpace.md,
+      left: inset,
+      right: inset,
+      child: SafeArea(
+        top: false,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(AppRadius.xl),
+            boxShadow: AppShadows.float(Theme.of(context).brightness),
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(AppRadius.xl),
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+              child: Container(
+                padding: const EdgeInsets.all(AppSpace.xs - 2),
+                decoration: BoxDecoration(
+                  color: p.surface.withValues(alpha: 0.82),
+                  borderRadius: BorderRadius.circular(AppRadius.xl),
+                  border: Border.all(color: p.line),
+                ),
+                child: Semantics(
+                  container: true,
+                  explicitChildNodes: true,
+                  label: 'Main navigation',
+                  child: Row(
+                    children: [
+                      for (var i = 0; i < items.length; i++)
+                        Expanded(child: _navItem(context, i)),
+                    ],
+                  ),
+                ),
+              ),
             ),
           ),
         ),
@@ -56,35 +74,53 @@ class CustomNavBar extends ConsumerWidget {
     );
   }
 
-  Widget _navItem(IconData icon, String label, int idx, BuildContext context) {
-    final theme = Theme.of(context);
+  Widget _navItem(BuildContext context, int idx) {
+    final p = context.palette;
+    final (icon, activeIcon, label) = items[idx];
     final bool active = idx == index;
+    final duration = AppMotion.of(context, AppMotion.base);
 
-    return GestureDetector(
+    return Semantics(
+      selected: active,
+      button: true,
+      label: label,
+      excludeSemantics: true,
       onTap: () => onIndexChanged(idx),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 300),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        decoration: active
-            ? BoxDecoration(
-                color: theme.canvasColor.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(16),
-              )
-            : null,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, color: theme.canvasColor, size: active ? 24 : 20),
-            if (active)
-              Text(
-                label,
-                style: TextStyle(
-                  color: theme.canvasColor,
-                  fontSize: 10,
-                  fontWeight: FontWeight.w600,
+      child: Material(
+        type: MaterialType.transparency,
+        child: InkWell(
+          onTap: () => onIndexChanged(idx),
+          borderRadius: BorderRadius.circular(AppRadius.lg + 2),
+          focusColor: p.accent.withValues(alpha: 0.2),
+          hoverColor: p.ink.withValues(alpha: 0.05),
+          child: AnimatedContainer(
+            duration: duration,
+            curve: AppMotion.emphasized,
+            height: 52,
+            decoration: BoxDecoration(
+              color: active ? p.ink : Colors.transparent,
+              borderRadius: BorderRadius.circular(AppRadius.lg + 2),
+            ),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  active ? activeIcon : icon,
+                  size: 21,
+                  color: active ? p.paper : p.inkMuted,
                 ),
-              ),
-          ],
+                const SizedBox(height: 2),
+                AnimatedDefaultTextStyle(
+                  duration: duration,
+                  style: Theme.of(context).textTheme.labelSmall!.copyWith(
+                    fontSize: 10,
+                    color: active ? p.paper : p.inkMuted,
+                  ),
+                  child: Text(label, maxLines: 1),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );

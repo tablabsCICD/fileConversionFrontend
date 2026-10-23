@@ -1,7 +1,8 @@
-import 'package:flutter/cupertino.dart';
+import 'package:file_convertor/app/theme/app_palette.dart';
+import 'package:file_convertor/app/theme/app_tokens.dart';
 import 'package:flutter/material.dart';
 
-class CustomTextFormField extends StatelessWidget {
+class CustomTextFormField extends StatefulWidget {
   final TextEditingController controller;
 
   /// Texts
@@ -14,6 +15,7 @@ class CustomTextFormField extends StatelessWidget {
   final bool enabled;
   final int maxLines;
   final TextCapitalization textCapitalization;
+  final TextInputAction? textInputAction;
 
   /// UI
   final Widget? prefix;
@@ -33,6 +35,7 @@ class CustomTextFormField extends StatelessWidget {
     this.enabled = true,
     this.maxLines = 1,
     this.textCapitalization = TextCapitalization.none,
+    this.textInputAction,
     this.prefix,
     this.suffix,
     this.validator,
@@ -40,87 +43,120 @@ class CustomTextFormField extends StatelessWidget {
   });
 
   @override
+  State<CustomTextFormField> createState() => _CustomTextFormFieldState();
+}
+
+class _CustomTextFormFieldState extends State<CustomTextFormField> {
+  final _focusNode = FocusNode();
+  bool _focused = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _focusNode.addListener(() {
+      if (_focused != _focusNode.hasFocus) {
+        setState(() => _focused = _focusNode.hasFocus);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
+    final p = context.palette;
+
+    final borderColor = !widget.enabled
+        ? p.line
+        : _focused
+        ? p.accent
+        : p.lineStrong;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
       children: [
-        /// OPTIONAL LABEL (iOS Settings style)
-        if (labelText != null) ...[
+        /// OPTIONAL LABEL
+        if (widget.labelText != null) ...[
           Padding(
-            padding: const EdgeInsets.only(left: 6, bottom: 6),
+            padding: const EdgeInsets.only(left: 2, bottom: AppSpace.xs - 2),
             child: Text(
-              labelText!,
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.canvasColor,
-                fontWeight: FontWeight.w500,
-              ),
+              widget.labelText!,
+              style: theme.textTheme.labelMedium?.copyWith(color: p.inkMuted),
             ),
           ),
         ],
 
         /// FIELD CONTAINER
-        Container(
-          height: 50, // ✅ Standard iOS / Material height
+        AnimatedContainer(
+          duration: AppMotion.of(context, AppMotion.fast),
+          constraints: const BoxConstraints(minHeight: AppSize.field),
           decoration: BoxDecoration(
-            color: theme.cardColor,
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(
-              color: enabled
-                  ? theme.canvasColor.withOpacity(0.2)
-                  : theme.canvasColor.withOpacity(0.05),
-            ),
+            color: widget.enabled ? p.surface : p.surfaceSunken,
+            borderRadius: AppRadius.control,
+            border: Border.all(color: borderColor, width: _focused ? 2 : 1),
           ),
-          padding: const EdgeInsets.symmetric(horizontal: 14),
+          // Keep the text from shifting when the border thickens.
+          padding: EdgeInsets.symmetric(horizontal: _focused ? 13 : 14),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              if (prefix != null) ...[
+              if (widget.prefix != null) ...[
                 IconTheme(
-                  data: IconThemeData(color: theme.primaryColor, size: 20),
-                  child: prefix!,
+                  data: IconThemeData(
+                    color: _focused ? p.accent : p.inkMuted,
+                    size: 20,
+                  ),
+                  child: widget.prefix!,
                 ),
-                const SizedBox(width: 10),
+                const SizedBox(width: AppSpace.sm - 2),
               ],
 
               /// TEXT FIELD
               Expanded(
                 child: TextFormField(
-                  controller: controller,
-                  keyboardType: keyboardType,
-                  obscureText: obscureText,
-                  enabled: enabled,
-                  maxLines: maxLines,
-                  validator: validator,
-                  onChanged: onChanged,
-                  textCapitalization: textCapitalization,
-                  cursorColor: colorScheme.primary,
+                  controller: widget.controller,
+                  focusNode: _focusNode,
+                  keyboardType: widget.keyboardType,
+                  obscureText: widget.obscureText,
+                  enabled: widget.enabled,
+                  maxLines: widget.maxLines,
+                  validator: widget.validator,
+                  onChanged: widget.onChanged,
+                  textInputAction: widget.textInputAction,
+                  textCapitalization: widget.textCapitalization,
+                  cursorColor: p.accent,
                   style: theme.textTheme.bodyLarge?.copyWith(
                     fontWeight: FontWeight.w500,
                   ),
                   decoration: InputDecoration(
-                    hintText: hintText,
+                    hintText: widget.hintText,
                     hintStyle: theme.textTheme.bodyLarge?.copyWith(
-                      color: theme.canvasColor.withOpacity(0.75),
+                      color: p.inkMuted,
                     ),
-
+                    filled: false,
                     border: InputBorder.none,
+                    enabledBorder: InputBorder.none,
+                    focusedBorder: InputBorder.none,
+                    disabledBorder: InputBorder.none,
                     isDense: true,
-                    contentPadding: EdgeInsets.zero,
+                    contentPadding: const EdgeInsets.symmetric(
+                      vertical: AppSpace.md - 1,
+                    ),
                   ),
                 ),
               ),
 
-              if (suffix != null) ...[
-                const SizedBox(width: 10),
+              if (widget.suffix != null) ...[
+                const SizedBox(width: AppSpace.sm - 2),
                 IconTheme(
-                  data: IconThemeData(
-                    color: theme.canvasColor.withOpacity(0.75),
-                    size: 20,
-                  ),
-                  child: suffix!,
+                  data: IconThemeData(color: p.inkMuted, size: 20),
+                  child: widget.suffix!,
                 ),
               ],
             ],
