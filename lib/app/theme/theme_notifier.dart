@@ -7,25 +7,38 @@ final themeProvider = StateNotifierProvider<ThemeNotifier, ThemeMode>(
 );
 
 class ThemeNotifier extends StateNotifier<ThemeMode> {
-  ThemeNotifier() : super(ThemeMode.light) {
+  ThemeNotifier() : super(ThemeMode.system) {
     _loadTheme();
   }
 
+  static const _modeKey = 'themeMode';
+  static const _legacyKey = 'isDark';
+
   Future<void> _loadTheme() async {
     final prefs = await SharedPreferences.getInstance();
-    final isDark = prefs.getBool("isDark") ?? false;
-    state = isDark ? ThemeMode.dark : ThemeMode.light;
+    final saved = prefs.getString(_modeKey);
+    if (saved != null) {
+      state = ThemeMode.values.asNameMap()[saved] ?? ThemeMode.system;
+      return;
+    }
+    // Migrate the old light/dark flag.
+    final isDark = prefs.getBool(_legacyKey);
+    if (isDark != null) state = isDark ? ThemeMode.dark : ThemeMode.light;
   }
 
-  Future<void> toggleTheme() async {
+  Future<void> setMode(ThemeMode mode) async {
+    state = mode;
     final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_modeKey, mode.name);
+  }
 
-    final isDark = state == ThemeMode.dark;
-    prefs.setBool("isDark", !isDark);
-
-    // Smooth iOS fade animation:
-    state = ThemeMode.system; // triggers rebuild
-    await Future.delayed(const Duration(milliseconds: 50));
-    state = isDark ? ThemeMode.light : ThemeMode.dark;
+  /// Flips between light and dark, resolving "system" first.
+  Future<void> toggleTheme([Brightness? current]) {
+    final isDark = switch (state) {
+      ThemeMode.dark => true,
+      ThemeMode.light => false,
+      ThemeMode.system => current == Brightness.dark,
+    };
+    return setMode(isDark ? ThemeMode.light : ThemeMode.dark);
   }
 }

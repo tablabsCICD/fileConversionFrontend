@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../features/home/view/home_page.dart';
 import '../features/file_conversion/view/file_conversion_page.dart';
+import 'navigation.dart';
 import 'theme/theme_notifier.dart';
 import 'theme/app_theme.dart';
 
@@ -23,7 +24,7 @@ class MyApp extends ConsumerWidget {
           ? AppTheme.darkTheme
           : AppTheme.lightTheme,
       child: MaterialApp(
-        debugShowCheckedModeBanner: false,
+        debugShowCheckedModeBanner: true,
         themeMode: themeMode,
         theme: AppTheme.lightTheme,
         darkTheme: AppTheme.darkTheme,
@@ -33,17 +34,10 @@ class MyApp extends ConsumerWidget {
   }
 }
 
-class MainNavigation extends ConsumerStatefulWidget {
+class MainNavigation extends ConsumerWidget {
   const MainNavigation({super.key});
 
-  @override
-  ConsumerState<MainNavigation> createState() => _MainNavigationState();
-}
-
-class _MainNavigationState extends ConsumerState<MainNavigation> {
-  int currentIndex = 0;
-
-  final List<Widget> pages = const [
+  static const List<Widget> pages = [
     HomePage(),
     FileConversionPage(),
     FileSharingHomePage(),
@@ -51,17 +45,20 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
   ];
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final tab = ref.watch(appTabProvider);
     return Scaffold(
       extendBody: true,
       body: Stack(
         children: [
-          pages[currentIndex],
+          // Keep each tab alive so scroll position and input survive.
+          IndexedStack(index: tab.index, children: pages),
 
           // FLOATING BLUR NAVBAR
           CustomNavBar(
-            index: currentIndex,
-            onIndexChanged: (i) => setState(() => currentIndex = i),
+            index: tab.index,
+            onIndexChanged: (i) =>
+                ref.read(appTabProvider.notifier).select(AppTab.values[i]),
           ),
         ],
       ),
